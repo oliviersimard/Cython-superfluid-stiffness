@@ -1,0 +1,5 @@
+*.c
+*.so
+build
+setup.py
+primes.pyx
