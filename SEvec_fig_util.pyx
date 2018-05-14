@@ -80,7 +80,7 @@ def my_log(method):
     def wrapped(*args, **kwargs):
         mappingproxy = list(Cdmft_data.__dict__.keys())
         for dict_el in mappingproxy:
-            path_tmp = os.getcwd()+"/"+dict_el+".log"
+            path_tmp = cwd+"/"+dict_el+".log"
             if os.path.exists(path_tmp):
                 print(dict_el+".log created")
         logging.info('Ran with args: {}, and kwargs: {}'.format(args,kwargs))
@@ -138,26 +138,28 @@ cdef class Cdmft_data(object):
         return file_path_list
 
     
-    def gen_cdmft_data(self, int tr_index_range, str paths, str opt):
+    def gen_cdmft_data(self, str tr_index_range, str paths, str opt):
         """Method that produces generators of the trace of electronic SE or G with respect to doping (HF) or frequency"""
         if self.verbose > 0:
             print("In gen_cdmft_data method\n")
             print("trace of indices: ", tr_index_range)
         #opt = new char[index_range]
         cdef int i
+        ind = tr_index_range.split(":")
+        i0 = int(ind[0]); i1 = int(ind[1])
         cdmft_data = np.load(paths)
         if opt == "freq":
             if self.verbose > 0:
                 print("freq chosen")
             for i in xrange(0,cdmft_data.shape[1]):
-                im_el = np.imag(np.trace(cdmft_data[0,i,4:6,4:6])).tolist()
-                re_el = np.real(np.trace(cdmft_data[0,i,4:6,4:6])).tolist()
+                im_el = np.imag(np.trace(cdmft_data[0,i,i0:i1,i0:i1])).tolist()
+                re_el = np.real(np.trace(cdmft_data[0,i,i0:i1,i0:i1])).tolist()
                 yield re_el, im_el
         elif opt == "HF":
             if self.verbose > 0:
                 print("HF chosen")
-            im_el = np.imag(np.trace(cdmft_data[0,-1,4:6,4:6])).tolist()
-            re_el = np.real(np.trace(cdmft_data[0,-1,4:6,4:6])).tolist()
+            im_el = np.imag(np.trace(cdmft_data[0,-1,i0:i1,i0:i1])).tolist()
+            re_el = np.real(np.trace(cdmft_data[0,-1,i0:i1,i0:i1])).tolist()
             yield re_el, im_el
 
         else:
@@ -246,7 +248,7 @@ cdef class Cdmft_data(object):
                 print("not sparse")
             return self.same_repository(key_folder)
     @my_log
-    def load_data_from_files(self, bool sparse, str key_folder, int tr_index_range, str opt, str mu_list):
+    def load_data_from_files(self, bool sparse, str key_folder, str tr_index_range, str opt, str mu_list):
         """Method used to load the data from the files in the targeted range of dopings."""
         if self.verbose > 0:
             print("In load_data_from_files method\n")
@@ -276,7 +278,7 @@ cdef class Cdmft_data(object):
 
         return SEvsG, dop_gen_file_list
     @my_time
-    def gen_plot(self, bool sparse, str key_folder, int tr_index_range, str opt, str mu_list, str filename):
+    def gen_plot(self, bool sparse, str key_folder, str tr_index_range, str opt, str mu_list, str filename):
         """Method to plot the RE and IM parts of the SE or G."""
         if self.verbose > 0:
             print("In gen_plot method \n")
@@ -295,11 +297,12 @@ cdef class Cdmft_data(object):
         #---------------------------Imaginary part plotted--------------------------
         if opt == "freq":
             axIM = plt.subplot(211)
+            filename = filename + "freq"
             if SEvsG == "SEvec":
-                ylabel = (r"Im$\Sigma_{%02d}$"r"$\left(\omega\right)$" % (tr_index_range)) # <<<<--------------------------------------------------Modify to fit
+                ylabel = (r"Im$\Sigma_{%s}$"r"$\left(\omega\right)$" % (tr_index_range)) # <<<<--------------------------------------------------Modify to fit
                 plt.title(r"Self-energy $\omega$-dependence at different dopings for $\beta = {0:2.2f}$".format(self.beta))
             elif SEvsG == "Gvec":
-                ylabel = (r"ImG$_{%02d}$"r"$\left(\omega\right)$" % (tr_index_range))
+                ylabel = (r"ImG$_{%s}$"r"$\left(\omega\right)$" % (tr_index_range))
                 plt.title(r"Green's function $\omega$-dependence at different dopings for $\beta = {0:2.2f}$".format(self.beta))
             plt.ylabel(ylabel, fontsize=15)
             x_lim = np.ceil((2*self.w_grid + 1)*np.pi/self.beta)
@@ -323,9 +326,9 @@ cdef class Cdmft_data(object):
             axRE = plt.subplot(212)
             xlabel = (r"$i\omega$")
             if SEvsG == "SEvec":
-                ylabel = (r"Re$\Sigma_{%02d}$"r"$\left(\omega\right)$" % (tr_index_range))
+                ylabel = (r"Re$\Sigma_{%s}$"r"$\left(\omega\right)$" % (tr_index_range))
             elif SEvsG == "Gvec":
-                ylabel = (r"ReG$_{%02d}$"r"$\left(\omega\right)$" % (tr_index_range))
+                ylabel = (r"ReG$_{%s}$"r"$\left(\omega\right)$" % (tr_index_range))
             plt.xlabel(xlabel, fontsize=15)
             plt.ylabel(ylabel, fontsize=15)
             x_lim = np.ceil((2*self.w_grid + 1)*np.pi/self.beta)
@@ -342,7 +345,7 @@ cdef class Cdmft_data(object):
             regex = re.compile(r'(.*?)(?=/)')
             filename = filename + "HF"
             axHF = plt.subplot(111)
-            ylabel = (r"Re$\Sigma_{%02d}$"r"$\left(\omega\to\infty\right)$" % (tr_index_range))
+            ylabel = (r"Re$\Sigma_{%s}$"r"$\left(\omega\to\infty\right)$" % (tr_index_range))
             xlabel = (r"doping $\delta$")
             plt.ylabel(ylabel, fontsize=15)
             plt.xlabel(xlabel, fontsize=15)
