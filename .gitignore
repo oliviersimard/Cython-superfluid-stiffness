@@ -3,3 +3,5 @@
 build
 setup.py
 primes.pyx
+*.tar.gz
+README

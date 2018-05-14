@@ -5,9 +5,11 @@ import os, re
 import time, logging
 import warnings
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 from fnmatch import fnmatch
 from functools import wraps
-from libc.stdlib cimport atoi
+from shutil import copyfile
+from libc.stdlib cimport atoi, malloc, free
 from libc.stdio cimport *
 from libc.string cimport *
 from cpython cimport bool
@@ -18,6 +20,24 @@ from cpython cimport bool
 #File containing the classes and methods to produce figures written in cython
 
 #-----------------------------------------------------------------------------
+
+cdef public double* global_c = <double*>malloc(sizeof(double)) ##Static variable
+global_c[0] = 0
+
+def call_at_end():
+    free(global_c)
+
+cdef str cwd 
+cpdef set_cwd(str val): 
+    global cwd 
+    cwd=val
+
+set_cwd(os.getcwd())
+
+cpdef get_cwd(): 
+    print(cwd)
+
+get_cwd()
 
 class InputError(Exception):
     """Exception raised for errors in the input.
@@ -44,8 +64,8 @@ class ArgumentError(Exception):
 def my_time(method):
     @wraps(method)
     def wrapped(*args, **kwargs):
-        #cdef float t0
-        #cdef float tf
+        cdef float t0
+        cdef float tf
         t0 = time.time()
         result = method(*args, **kwargs)
         tf = time.time() - t0
@@ -103,9 +123,9 @@ cdef class Cdmft_data(object):
         self.paths = paths; self.pattern = pattern; self.w_grid = w_grid; self.U = U
         self.beta = beta; self.dop_min = dop_min; self.dop_max = dop_max; self.verbose = verbose
 
-    def gen_file_path(self, str key_folder, int verbose):
+    def gen_file_path(self, str key_folder):
         """Method that searches the path of the files containing cdmft data."""
-        if verbose > 0:
+        if self.verbose > 0:
             print("In gen_file_path method\n")
         file_path_list = []
         cdef str path, name
@@ -118,23 +138,23 @@ cdef class Cdmft_data(object):
         return file_path_list
 
     
-    def gen_cdmft_data(self, int tr_index_range, str paths, str opt, int verbose):
+    def gen_cdmft_data(self, int tr_index_range, str paths, str opt):
         """Method that produces generators of the trace of electronic SE or G with respect to doping (HF) or frequency"""
-        if verbose > 0:
+        if self.verbose > 0:
             print("In gen_cdmft_data method\n")
             print("trace of indices: ", tr_index_range)
         #opt = new char[index_range]
         cdef int i
         cdmft_data = np.load(paths)
         if opt == "freq":
-            if verbose > 0:
+            if self.verbose > 0:
                 print("freq chosen")
             for i in xrange(0,cdmft_data.shape[1]):
                 im_el = np.imag(np.trace(cdmft_data[0,i,4:6,4:6])).tolist()
                 re_el = np.real(np.trace(cdmft_data[0,i,4:6,4:6])).tolist()
                 yield re_el, im_el
         elif opt == "HF":
-            if verbose > 0:
+            if self.verbose > 0:
                 print("HF chosen")
             im_el = np.imag(np.trace(cdmft_data[0,-1,4:6,4:6])).tolist()
             re_el = np.real(np.trace(cdmft_data[0,-1,4:6,4:6])).tolist()
@@ -144,13 +164,13 @@ cdef class Cdmft_data(object):
             print("Error in argument")
             raise ArgumentError(opt,"Wrong opt argument input entered. Only \'HF\' and \'freq\' implemented.")
 
-    def same_repository(self, str key_folder, int verbose):
+    def same_repository(self, str key_folder):
         """Method called when dealing with data stored in same repository."""
-        if verbose > 0:
+        if self.verbose > 0:
             print("In same_repository method\n")
         regex_not_sparse = re.compile(r'(.*?)(?=/)')
         regex_int = re.compile(r'\d+')
-        file_path_list = self.gen_file_path(key_folder, verbose)
+        file_path_list = self.gen_file_path(key_folder)
         #print("file_path_list", file_path_list)
         int_list = []
         warnings.warn("Files are stored in same repository.")
@@ -171,14 +191,14 @@ cdef class Cdmft_data(object):
         return SEvsG, list_file_fusion
 
 
-    def sparse_repository(self, str key_folder, int verbose):
+    def sparse_repository(self, str key_folder):
         """Method used to separate different set of data for later handling."""
-        if verbose > 0:
+        if self.verbose > 0:
             print("In sparse_repository method\n")
             warnings.warn("Files are stored in different repositories.")
         regex_sparse = re.compile(r'(.*?)(?=_)')
         regex_int = re.compile(r'\d+')
-        file_path_list = self.gen_file_path(key_folder, verbose)
+        file_path_list = self.gen_file_path(key_folder)
         #print("file_path_list: ", file_path_list)
         file_path_list_2 = []
         int_list = []
@@ -213,22 +233,22 @@ cdef class Cdmft_data(object):
 
         return SEvsG, np.vstack((list_file_fusion, list_file_fusion_2))
 
-    def repository_differentiation(self, bool sparse, str key_folder, int verbose):
+    def repository_differentiation(self, bool sparse, str key_folder):
         """Method created to distinguished between data in same repository or in sparse repositories."""
-        if verbose > 0:
+        if self.verbose > 0:
             print("In repository_differentiation method\n")
         if sparse:
-            if verbose > 0:
+            if self.verbose > 0:
                 print("sparse")
-            return self.sparse_repository(key_folder, verbose)
+            return self.sparse_repository(key_folder)
         else:
-            if verbose > 0:
+            if self.verbose > 0:
                 print("not sparse")
-            return self.same_repository(key_folder, verbose)
+            return self.same_repository(key_folder)
     @my_log
-    def load_data_from_files(self, bool sparse, str key_folder, int tr_index_range, str opt, str mu_list, int verbose):
+    def load_data_from_files(self, bool sparse, str key_folder, int tr_index_range, str opt, str mu_list):
         """Method used to load the data from the files in the targeted range of dopings."""
-        if verbose > 0:
+        if self.verbose > 0:
             print("In load_data_from_files method\n")
         gen_file_list = []
         dop_range = []
@@ -243,24 +263,24 @@ cdef class Cdmft_data(object):
                 dop_range.append(list_mu[i])
                 index_range.append(i)
             i += 1
-        SEvsG, sorted_file_list = self.repository_differentiation(sparse, key_folder, verbose)
+        SEvsG, sorted_file_list = self.repository_differentiation(sparse, key_folder)
         sorted_file_array = np.asarray(sorted_file_list)
         #print("SEvsG, sorted_file_array: ", SEvsG, type(sorted_file_array)) 
         for j, sorted_filestr in enumerate(sorted_file_array[:,1]):
             #print("sorted_filestr: ", sorted_filestr)
             if j in index_range:
-                cdmft_data = self.gen_cdmft_data(tr_index_range, str(sorted_filestr), opt, verbose)
+                cdmft_data = self.gen_cdmft_data(tr_index_range, str(sorted_filestr), opt)
                 #print("cdmft_data : ", list(cdmft_data))
                 gen_file_list.append(cdmft_data)
         dop_gen_file_list = list(sorted(zip(dop_range,gen_file_list),key=lambda x: x[0]))
 
         return SEvsG, dop_gen_file_list
     @my_time
-    def gen_plot(self, bool sparse, str key_folder, int tr_index_range, str opt, str mu_list, str filename, int verbose):
+    def gen_plot(self, bool sparse, str key_folder, int tr_index_range, str opt, str mu_list, str filename):
         """Method to plot the RE and IM parts of the SE or G."""
-        if verbose > 0:
+        if self.verbose > 0:
             print("In gen_plot method \n")
-        SEvsG, data_gen_list = self.load_data_from_files(sparse, key_folder, tr_index_range, opt, mu_list, verbose)
+        SEvsG, data_gen_list = self.load_data_from_files(sparse, key_folder, tr_index_range, opt, mu_list)
         cdef float dop
         cdef tuple dop_gen
         cdef tuple dop_re_el
@@ -295,7 +315,7 @@ cdef class Cdmft_data(object):
                     im_el_list.append(im_el)
                     re_el_list.append(re_el)
                 list_dop_re_el_list.append((dop,re_el_list))
-                if verbose > 0:
+                if self.verbose > 0:
                     print("len_im_el_list: ", len(im_el_list),"\n")
                     print("len_list_re_el_list: ", len(list_dop_re_el_list),"\n")
                 axIM.plot(w_list,im_el_list,linestyle="-",marker='o',markersize=3,linewidth=2,color=next(color_im))
@@ -329,7 +349,7 @@ cdef class Cdmft_data(object):
             plt.title(r"Re$\Sigma\left(\omega\to\infty\right)$ at different dopings for $\beta = {0:2.2f}$".format(self.beta))
             dop_list = []
             re_el_list = []
-            if verbose > 0:
+            if self.verbose > 0:
                 print("len data_gen_list: ", len(data_gen_list))
             for dop_gen in data_gen_list:
                 dop, gen = dop_gen
@@ -344,4 +364,135 @@ cdef class Cdmft_data(object):
         plt.show()
         fig.savefig(filename + ".pdf", format='pdf')
         return None
+
+cdef class Correction:
+    """Class used to correct overshooting of coexistence superfluid stiffness data"""
+    __metaclass__ = MetaClass
+    cdef readonly float tol
+    cdef public str file_to_correct
+    cdef public str file_nocoex
+    cdef public str file_nocoex_AFM_per
+    cdef public str var_para_info
+    cdef double* p
+
+    def __cinit__(self, float tol, str file_to_correct, str file_nocoex, str file_nocoex_AFM_per, str var_para_info):
+        self.tol = tol; self.file_to_correct = file_to_correct; self.file_nocoex = file_nocoex; 
+        self.file_nocoex_AFM_per = file_nocoex_AFM_per; self.var_para_info = var_para_info; self.p = global_c
+
+    def fitting_function_curve_fit(self, float x, float a, float b, float c, float d, float e, float f, float g, float h):
+        """Fitting function for curve_fit option"""
+        
+        return a*x + b*x**2 + c*x**3 + d*x**4 + e*x**5 + f*x**6 + g*x**7 + h
+
+    #@my_time
+    def load_files(self):
+        """Method used to load files to correct periodization overshooting"""
+
+        cdef tuple el
+        cdef int length_el
+        coex_data_to_correct = np.loadtxt(cwd+"/"+self.file_to_correct, usecols=(1,2))
+        nocoex_data = np.loadtxt(cwd+"/"+self.file_nocoex, usecols=(1,2))
+        AFM_per_nocoex_data = np.loadtxt(cwd+"/"+self.file_nocoex_AFM_per, usecols=(1,2))
+        file_to_check_tol_M = np.genfromtxt(cwd+"/"+self.var_para_info, names=True)
+        copyfile(cwd+"/"+self.file_to_correct, cwd+"/"+self.file_to_correct + ".corr")
+        length_el = len(file_to_check_tol_M["ave_mu"])
+        check_tol_M = ([el[0],el[1]] for el in zip(file_to_check_tol_M["ave_mu"],file_to_check_tol_M["ave_M"]))
+
+        return coex_data_to_correct, nocoex_data, AFM_per_nocoex_data, check_tol_M, length_el
+
+    def relevant_super_stiff(self):
+        """Method used to compile the data computed in presence of coexistence (relevant)"""
+
+        coex_data, nocoex_data, AFM_per_nocoex_data, check_tol_M, length_el = self.load_files()
+
+        relevant_super_stiff_to_correct = []
+        nocoex_AFM_per_nocoex_data = np.hstack((AFM_per_nocoex_data,nocoex_data))
+        for i in xrange(length_el):
+            check_tol_el = next(check_tol_M)
+            ave_M_tmp = float(check_tol_el[1])
+            if ave_M_tmp >= self.tol:
+                relevant_super_stiff_to_correct.append(check_tol_el)
+        relevant_super_stiff_to_correct = np.asarray(relevant_super_stiff_to_correct, dtype=float)
+        
+        min_dop_AFM = min(relevant_super_stiff_to_correct[:,0])
+        max_dop_AFM = max(relevant_super_stiff_to_correct[:,0])
+        del relevant_super_stiff_to_correct
+        relevant_nocoex_AFM_per_nocoex_data = [element[0:4] for element in nocoex_AFM_per_nocoex_data if min_dop_AFM <= element[0] <= max_dop_AFM]
+        relevant_nocoex_AFM_per_nocoex_data = np.asarray(relevant_nocoex_AFM_per_nocoex_data, dtype=float)
+        return relevant_nocoex_AFM_per_nocoex_data, max_dop_AFM, min_dop_AFM, coex_data, nocoex_data, AFM_per_nocoex_data
+    
+    def gen_corrected_coex_data(self, str opt, int poly):
+        """Method used to generate the renormalized data in presence of coexistence"""
+    
+        relevant_nocoex_AFM_per_nocoex_data, max_dop_AFM, min_dop_AFM, coex_data, nocoex_data, AFM_per_nocoex_data = self.relevant_super_stiff()
+
+        if opt == "curve_fit":
+            popt, pcov = curve_fit(self.fitting_function_curve_fit, relevant_nocoex_AFM_per_nocoex_data[:,0], relevant_nocoex_AFM_per_nocoex_data[:,1]) ##Fitting AFM_per_nocoex_data
+            popt2, pcov2 = curve_fit(self.fitting_function_curve_fit, relevant_nocoex_AFM_per_nocoex_data[:,2], relevant_nocoex_AFM_per_nocoex_data[:,3]) ##Fitting nocoex_data
+
+            corrected_coex_data = []
+            for element in coex_data:
+                if min_dop_AFM <= element[0] <= max_dop_AFM:
+                    corrected_coex_data.append([element[0], element[1]*(self.fitting_function_curve_fit(element[0],*popt2)/self.fitting_function_curve_fit(element[0],*popt))]) #renormalization procedure done here
+            corrected_coex_data = np.asarray(corrected_coex_data, dtype=float)
+
+        elif opt == "polyfit":
+            popt = np.polyfit(relevant_nocoex_AFM_per_nocoex_data[:,0], relevant_nocoex_AFM_per_nocoex_data[:,1], poly, full=False, cov=False) ##Fitting AFM_per_nocoex_data
+            popt2 = np.polyfit(relevant_nocoex_AFM_per_nocoex_data[:,2], relevant_nocoex_AFM_per_nocoex_data[:,3], poly, full=False, cov=False) ##Fitting nocoex_data
+
+            corrected_coex_data = []
+            for element in coex_data:
+                if min_dop_AFM <= element[0] <= max_dop_AFM:
+                    corrected_coex_data.append([element[0], element[1]*(np.polyval(popt2,element[0])/np.polyval(popt,element[0]))]) #renormalization procedure done here
+            corrected_coex_data = np.asarray(corrected_coex_data, dtype=float)
+
+        else:
+            print("Error in argument")
+            raise ArgumentError(opt,"Wrong opt argument input entered. Only \'curve_fit\' and \'polyfit\' implemented.")
+
+        return corrected_coex_data, coex_data, nocoex_data, AFM_per_nocoex_data
+
+    def gen_corrected_file(self, str opt, int poly):
+        """Method used to generate the file containing the corrected values of the superfluid stiffness"""
+        
+        cdef int i
+        corrected_coex_data, coex_data, nocoex_data, AFM_per_nocoex_data = self.gen_corrected_coex_data(opt,poly) ## coex_data is the data in coexistence not having been corrected
+
+        filename_to_write = cwd+"/"+self.file_to_correct + ".corr"
+        coex_data_corrected_to_write = np.loadtxt(filename_to_write, usecols=(1,2))
+        print(coex_data_corrected_to_write)
+        for element in coex_data_corrected_to_write:
+            for corr_data in corrected_coex_data:
+                if element[0] == corr_data[0]:
+                    element[1] = corr_data[1]
+
+        print(coex_data_corrected_to_write)
+        with open(filename_to_write,'w') as fi:
+            for i in xrange(len(coex_data_corrected_to_write)):
+                fi.write("{0:5.5f}\t\t{1}\n".format(coex_data_corrected_to_write[i,0],coex_data_corrected_to_write[i,1]))
+        fi.close()
+
+        return corrected_coex_data, coex_data, nocoex_data, AFM_per_nocoex_data
+
+    def gen_plot_comparison(self, str opt, int poly, str filename):
+        """Plot that ensures that the fit is appropriate by plotting results"""
+        
+        corrected_coex_data, coex_data, nocoex_data, AFM_per_nocoex_data = self.gen_corrected_file(opt,poly)
+
+        fig = plt.figure()
+
+        plt.plot(AFM_per_nocoex_data[:,0], AFM_per_nocoex_data[:,1],'.',label='AFM_per_nocoex_data')
+        plt.plot(corrected_coex_data[:,0], corrected_coex_data[:,1],'.',label='corrected_coex_data')
+        plt.plot(nocoex_data[:,0], nocoex_data[:,1],'.',label='nocoex_data')
+        plt.plot(coex_data[:,0], coex_data[:,1],'.',label='coex_data')
+
+        plt.xlabel(r"Density of particles $n$")
+        plt.ylabel(r"Superfluid stiffness $\rho_s$")
+        plt.legend()
+
+        fig.savefig(filename + ".pdf", format='pdf')
+        return plt.show()
+
+        
+
 
