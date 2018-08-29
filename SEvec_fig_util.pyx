@@ -277,6 +277,47 @@ cdef class Cdmft_data(object):
         dop_gen_file_list = list(sorted(zip(dop_range,gen_file_list),key=lambda x: x[0]))
 
         return SEvsG, dop_gen_file_list
+
+    def get_quasi_weight(self, bool sparse, str key_folder, str tr_index_range, str opt, str mu_list):
+        """Method that computes the quasiparticle weight Z"""
+        if self.verbose > 0:
+            print("In get_quasi_weight method\n")
+        #w_grid = self.w_grid
+        #iw_0 = w_grid[0]
+        cdef float dop
+        cdef tuple dop_gen
+        tr_index_range = ":".join(("0","1")) #Need the first element (0,0)
+        assert opt == "freq", "opt argument must be set to \"freq\" for Z to be computed"
+        SEvsG, data_gen_list = self.load_data_from_files(sparse, key_folder, tr_index_range, opt, mu_list) 
+        assert SEvsG == "SEvec", "Quasiparticle weight can only be computed with self-energy"
+        dop_list = []
+        Z_list = []
+        for dop_gen in data_gen_list:
+            dop, gen = dop_gen
+            #print("dop: ", dop, "\n")
+            Re_self_0, Im_self_0 = next(gen)
+            #print("Im_self_0: ", Im_self_0, "\n")
+            Z = 1./(1. - (Im_self_0*self.beta/np.pi)) #Formula for the quasiparticle weight
+            #print("Z: ", Z, "\n")
+            dop_list.append(dop)
+            Z_list.append(Z)
+        if self.verbose > 0:
+            print("Z_list: ", Z_list,"\n")
+            print("dop_list: ", dop_list,"\n")
+        fig = plt.figure()
+        ax = plt.subplot(111)
+        ylabel = (r"Quasiparticle weight $Z$")
+        xlabel = (r"Doping $\delta$")
+        plt.ylabel(ylabel, fontsize=15)
+        plt.xlabel(xlabel, fontsize=15)
+        plt.title(r"Quasiparticle weight Z  at different dopings for $\beta = {0:2.2f}$".format(self.beta))
+        ax.plot(dop_list,Z_list,linestyle="-",marker='o',markersize=3,linewidth=2,label=r"$\beta=%.1f$"%(self.beta))
+        ax.legend(loc='upper center', bbox_to_anchor=(0.2,1.0), fancybox=True, shadow=True, ncol=1)
+        plt.show()
+
+        return None
+
+
     @my_time
     def gen_plot(self, bool sparse, str key_folder, str tr_index_range, str opt, str mu_list, str filename):
         """Method to plot the RE and IM parts of the SE or G."""
@@ -400,6 +441,7 @@ cdef class Correction:
         copyfile(cwd+"/"+self.file_to_correct, cwd+"/"+self.file_to_correct + ".corr")
         length_el = len(file_to_check_tol_M["ave_mu"])
         check_tol_M = ([el[0],el[1]] for el in zip(file_to_check_tol_M["ave_mu"],file_to_check_tol_M["ave_M"]))
+        #print("check_tol_M: ", list(check_tol_M))
 
         return coex_data_to_correct, nocoex_data, AFM_per_nocoex_data, check_tol_M, length_el
 
@@ -413,7 +455,7 @@ cdef class Correction:
         for i in xrange(length_el):
             check_tol_el = next(check_tol_M)
             ave_M_tmp = float(check_tol_el[1])
-            if ave_M_tmp >= self.tol:
+            if abs(ave_M_tmp) >= self.tol:
                 relevant_super_stiff_to_correct.append(check_tol_el)
         relevant_super_stiff_to_correct = np.asarray(relevant_super_stiff_to_correct, dtype=float)
         
@@ -463,13 +505,13 @@ cdef class Correction:
 
         filename_to_write = cwd+"/"+self.file_to_correct + ".corr"
         coex_data_corrected_to_write = np.loadtxt(filename_to_write, usecols=(1,2))
-        print(coex_data_corrected_to_write)
+        #print(coex_data_corrected_to_write)
         for element in coex_data_corrected_to_write:
             for corr_data in corrected_coex_data:
                 if element[0] == corr_data[0]:
                     element[1] = corr_data[1]
 
-        print(coex_data_corrected_to_write)
+        #print(coex_data_corrected_to_write)
         with open(filename_to_write,'w') as fi:
             for i in xrange(len(coex_data_corrected_to_write)):
                 fi.write("{0:5.5f}\t\t{1}\n".format(coex_data_corrected_to_write[i,0],coex_data_corrected_to_write[i,1]))
