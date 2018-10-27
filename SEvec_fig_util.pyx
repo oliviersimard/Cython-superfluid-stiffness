@@ -275,7 +275,7 @@ cdef class Cdmft_data(object):
                 #print("cdmft_data : ", list(cdmft_data))
                 gen_file_list.append(cdmft_data)
         dop_gen_file_list = list(sorted(zip(dop_range,gen_file_list),key=lambda x: x[0]))
-
+        #print("dop_gen_file_list: ", dop_gen_file_list)
         return SEvsG, dop_gen_file_list
 
     def get_quasi_weight(self, bool sparse, str key_folder, str tr_index_range, str opt, str mu_list):
@@ -447,11 +447,12 @@ cdef class Correction:
 
     def relevant_super_stiff(self):
         """Method used to compile the data computed in presence of coexistence (relevant)"""
-
+        
         coex_data, nocoex_data, AFM_per_nocoex_data, check_tol_M, length_el = self.load_files()
-
+        
         relevant_super_stiff_to_correct = []
         nocoex_AFM_per_nocoex_data = np.hstack((AFM_per_nocoex_data,nocoex_data))
+        print("nocoex_AFM_per_nocoex_data: ", nocoex_AFM_per_nocoex_data)
         for i in xrange(length_el):
             check_tol_el = next(check_tol_M)
             ave_M_tmp = float(check_tol_el[1])
@@ -470,7 +471,7 @@ cdef class Correction:
         """Method used to generate the renormalized data in presence of coexistence"""
     
         relevant_nocoex_AFM_per_nocoex_data, max_dop_AFM, min_dop_AFM, coex_data, nocoex_data, AFM_per_nocoex_data = self.relevant_super_stiff()
-
+        
         if opt == "curve_fit":
             popt, pcov = curve_fit(self.fitting_function_curve_fit, relevant_nocoex_AFM_per_nocoex_data[:,0], relevant_nocoex_AFM_per_nocoex_data[:,1]) ##Fitting AFM_per_nocoex_data
             popt2, pcov2 = curve_fit(self.fitting_function_curve_fit, relevant_nocoex_AFM_per_nocoex_data[:,2], relevant_nocoex_AFM_per_nocoex_data[:,3]) ##Fitting nocoex_data
@@ -488,7 +489,7 @@ cdef class Correction:
             corrected_coex_data = []
             for element in coex_data:
                 if min_dop_AFM <= element[0] <= max_dop_AFM:
-                    corrected_coex_data.append([element[0], element[1]*(np.polyval(popt2,element[0])/np.polyval(popt,element[0]))]) #renormalization procedure done here
+                    corrected_coex_data.append([element[0], element[1]*(np.polyval(popt2,element[0])/np.polyval(popt,element[0]))]) #renormalization procedure done here# Inverse --- popt and popt2 here for Cum per and popt2 and popt for per from left to right!!!!!!
             corrected_coex_data = np.asarray(corrected_coex_data, dtype=float)
 
         else:
